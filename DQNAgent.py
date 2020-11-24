@@ -20,32 +20,30 @@ https://pytorch.org/tutorials/intermediate/reinforcement_q_learning.html
 
 class DQNAgent(object):
 
-    def __init__(self, env):
+    def __init__(self, num_actions, state_shape):
         self.use_raw = False
-        self.env = env
         self.device = torch.device(
                 "cuda"
                 if torch.cuda.is_available()
                 else "cpu"
         )
 
-        self.num_actions = len(self.env.actions)
+        self.num_actions = num_actions
 
-        self.policy_net = DQN(self.env.state_shape[0],
-                              self.num_actions).to(self.device)
+        self.policy_net = DQN(state_shape, num_actions).to(self.device)
 
-        self.target_net = DQN(self.env.state_shape[0],
-                              self.num_actions).to(self.device)
+        self.target_net = DQN(state_shape, num_actions).to(self.device)
 
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()
 
-        self.loss = nn.SmoothL1Loss()
-        self.optimizer = self.optim.SGD(self.policy_net.parameters())
+        self.criterion = nn.SmoothL1Loss()
+        self.optimizer = optim.SGD(self.policy_net.parameters(), lr=0.001)
         self.memory = ReplayMemory(10000)
 
-        self.episode = 0
-        self.steps = 0
+        self.train_step = 0
+        self.action_chosen_in_training = 0
+        self.weight_updates = 0
 
         self.batch_size = 128
         self.gamma = 0.999
@@ -54,50 +52,73 @@ class DQNAgent(object):
         self.eps_decay = 200
         self.target_update = 10
 
-    def eval_step(self, state):
+    def choose_action(self, state):
         # pick action with largest expected reward
         with torch.no_grad():
-            pred = self.policy_net(state['obs'])
+            model_input = torch.tensor(state['obs'],
+                                       dtype=torch.float,
+                                       device=self.device)
+            pred = self.policy_net(model_input)
+            # print(f'pred = {pred}')
             # filter our invalid actions
             indices = torch.tensor(state['legal_actions'],
+                                   dtype=torch.long,
                                    device=self.device)
+            # print(f'indices = {indices}')
             # get rewards for valid actions
-            rewards = pred.index_select(pred, 0, indices)
+            rewards = pred.gather(0, indices)
+            # print(f'rewards = {rewards}')
             # get index of max reward
-            max_index = rewards.max(1)[1].item()
+            max_index = rewards.max(0)[1].item()
+            # print(f'max_index = {max_index}')
             # get action for that index
             action = state['legal_actions'][max_index]
-            return torch.tensor([[action]],
-                                device=self.device,
-                                dtype=torch.long)
-            # return self.policy_net(state).max(1)[1].view(1, 1)
+            # print(f'action = {action}')
+            # print(f'legal = {state["legal_actions"]}')
+            return action
+            # return torch.tensor([[action]],
+            #                    dtype=torch.long,
+            #                    device=self.device)
 
     def step(self, state):
+        # print('in dqn step')
         sample = random.random()
-        self.steps += 1
+        self.action_chosen_in_training += 1
 
         if sample > self.eps_threshold():
-            self.eval_step(state)
+            # print('dqn model')
+            return self.choose_action(state)
         else:
+            # print('dqn random')
+            return random.choice(state['legal_actions'])
+            '''
             return torch.tensor([[random.choice(state['legal_actions'])]],
                                 device=self.device,
-                                dtype=torch.long)
+                                dtype=torch.long))
+            '''
+
+    def eval_step(self, state):
+        self.policy_net.eval()
+        result = (self.choose_action(state), None)
+        self.policy_net.train()
+        return result
 
     def eps_threshold(self):
         return (self.eps_end + (self.eps_start - self.eps_end)
-                * math.exp(-1.0 * self.steps / self.eps_decay))
+                * math.exp(-1.0 * self.train_step / self.eps_decay))
 
     def get_state_dict(self):
         return self.policy_net.state_dict()
 
     def train(self, trajectory):
-        self.episode += 1
+        self.train_step += 1
 
-        state, action, reward, next_state, done = trajectory
-
-        self.memory.push(state, action, next_state, reward)
+        self.memory.push(*trajectory)
 
         self.optimize_model()
+
+    def pad_actions(self, act):
+        return act + ([act[0]] * (self.num_actions - len(act)))
 
     def optimize_model(self):
         if len(self.memory) < self.batch_size:
@@ -105,19 +126,109 @@ class DQNAgent(object):
 
         transitions = self.memory.sample(self.batch_size)
 
-        # transpose batch
+        # transpose the batch so that we get a transition
+        # of batch array
         batch = Transition(*zip(*transitions))
 
+        # mask for non-final states
+        # these are states where we will have another move to make
+        # after the current move
+        non_final_mask = torch.logical_not(torch.tensor(
+                batch.done,
+                dtype=torch.bool,
+                device=self.device
+        ))
+
+        # get the next states that are not final
+        non_final_next_state_batch = torch.tensor(
+                [s['obs'] for s in batch.next_state],
+                dtype=torch.float,
+                device=self.device
+        )[non_final_mask]
+
+        # get the legal actions for these non-final
+        # next states
+        non_final_next_state_legal_actions = torch.stack(
+                [
+                    torch.tensor(
+                        self.pad_actions(s['legal_actions']),
+                        dtype=torch.long,
+                        device=self.device)
+                    for s in batch.next_state
+                ],
+                dim=0
+        )[non_final_mask]
+
+        # get the state, action, and reward batches
+
+        state_batch = torch.tensor(
+                [s['obs'] for s in batch.state],
+                dtype=torch.float,
+                device=self.device
+        )
+
+        action_batch = torch.tensor(
+                batch.action,
+                dtype=torch.long,
+                device=self.device
+        ).view(-1, 1)
+
+        reward_batch = torch.tensor(
+                batch.reward,
+                dtype=torch.float,
+                device=self.device
+        )
+
+        # compute Q(s_t, a)
+        state_action_values = self.policy_net(state_batch).gather(1,
+                                                                  action_batch)
+        # compute max a for Q(s_{t+1}, a)
+
+        # if s_{t+1} is a final state, then Q(s_{t+1}, a) is 0
+        next_state_values = torch.zeros(self.batch_size, device=self.device)
+
+        if non_final_next_state_batch.size()[0] != 0:
+            # get predicted rewards for all non-final next states
+            next_state_all_values = self.target_net(non_final_next_state_batch)
+
+            # only select rewards for valid actions
+            next_state_valid_values = next_state_all_values.gather(
+                    1,
+                    non_final_next_state_legal_actions
+            )
+            # get the max reward for a valid action
+            next_state_values[non_final_mask] = (
+                    next_state_valid_values.max(1)[0]
+            )
+
+        expected_state_action_values = (
+                (next_state_values * self.gamma) + reward_batch
+        )
+
+        # minimize Q(s_t, a) - reward + (gamma * max a Q(s_{t+1}, a))
+        # the predicted total reward for choosing action a at state s_t
+        # should equal the actual reward for that action plus the
+        # predicted total reward for choosing another action at state s_{t+1}
+        loss = self.criterion(state_action_values,
+                              expected_state_action_values.unsqueeze(1))
+
         self.optimizer.zero_grad()
-        self.loss.backward()
+        loss.backward()
+
+        self.weight_updates += 1
 
         for param in self.policy_net.parameters():
             param.grad.data.clamp_(-1, 1)
 
         self.optimizer.step()
 
-        if self.episode % self.target_update == 0:
+        if self.weight_updates % self.target_update == 0:
             self.target_net.load_state_dict(self.policy_net.state_dict())
+
+    def load(self, path):
+        state_dict = torch.load(path)
+        self.target_net.load_state_dict(state_dict)
+        self.policy_net.load_state_dict(state_dict)
 
 
 '''
@@ -139,7 +250,7 @@ Example reward: 1.0
 '''
 
 Transition = namedtuple('Transition',
-                        ('state', 'action', 'next_state', 'reward'))
+                        ('state', 'action', 'reward', 'next_state', 'done'))
 
 
 class ReplayMemory(object):
@@ -157,13 +268,13 @@ class ReplayMemory(object):
         self.position = (self.position + 1) % self.capactiy
 
     def sample(self, batch_size):
-        return random.sample(self.capactiy, batch_size)
+        return random.sample(self.memory, batch_size)
 
     def __len__(self):
         return len(self.memory)
 
 
-class DQN(object):
+class DQN(nn.Module):
 
     def __init__(self, inputs, outputs):
         super(DQN, self).__init__()
