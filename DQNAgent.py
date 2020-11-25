@@ -1,10 +1,7 @@
-import numpy as np
 from collections import namedtuple
 
 import math
 import random
-import os
-import pickle
 
 import torch
 import torch.nn as nn
@@ -20,7 +17,7 @@ https://pytorch.org/tutorials/intermediate/reinforcement_q_learning.html
 
 class DQNAgent(object):
 
-    def __init__(self, num_actions, state_shape):
+    def __init__(self, num_actions, state_shape, memory=10000, lr=0.1):
         self.use_raw = False
         self.device = torch.device(
                 "cuda"
@@ -37,9 +34,10 @@ class DQNAgent(object):
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()
 
-        self.criterion = nn.SmoothL1Loss()
-        self.optimizer = optim.SGD(self.policy_net.parameters(), lr=0.001)
-        self.memory = ReplayMemory(10000)
+        # self.criterion = nn.SmoothL1Loss()
+        self.criterion = nn.MSELoss()
+        self.optimizer = optim.SGD(self.policy_net.parameters(), lr=lr)
+        self.memory = ReplayMemory(memory)
 
         self.train_step = 0
         self.action_chosen_in_training = 0
@@ -189,7 +187,8 @@ class DQNAgent(object):
 
         if non_final_next_state_batch.size()[0] != 0:
             # get predicted rewards for all non-final next states
-            next_state_all_values = self.target_net(non_final_next_state_batch)
+            next_state_all_values = \
+                    self.target_net(non_final_next_state_batch).detach()
 
             # only select rewards for valid actions
             next_state_valid_values = next_state_all_values.gather(
@@ -216,9 +215,10 @@ class DQNAgent(object):
         loss.backward()
 
         self.weight_updates += 1
-
+        '''
         for param in self.policy_net.parameters():
             param.grad.data.clamp_(-1, 1)
+        '''
 
         self.optimizer.step()
 

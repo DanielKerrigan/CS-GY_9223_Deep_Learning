@@ -3,3 +3,6 @@ __pycache__
 rlcard
 experiments
 models
+.DS_Store
+new_run.sh
+cfr_model/
