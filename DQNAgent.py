@@ -34,7 +34,6 @@ class DQNAgent(object):
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()
 
-        # self.criterion = nn.SmoothL1Loss()
         self.criterion = nn.MSELoss()
         self.optimizer = optim.SGD(self.policy_net.parameters(), lr=lr)
         self.memory = ReplayMemory(memory)
@@ -57,43 +56,30 @@ class DQNAgent(object):
                                        dtype=torch.float,
                                        device=self.device)
             pred = self.policy_net(model_input)
-            # print(f'pred = {pred}')
+
             # filter our invalid actions
             indices = torch.tensor(state['legal_actions'],
                                    dtype=torch.long,
                                    device=self.device)
-            # print(f'indices = {indices}')
             # get rewards for valid actions
             rewards = pred.gather(0, indices)
-            # print(f'rewards = {rewards}')
+
             # get index of max reward
             max_index = rewards.max(0)[1].item()
-            # print(f'max_index = {max_index}')
+
             # get action for that index
             action = state['legal_actions'][max_index]
-            # print(f'action = {action}')
-            # print(f'legal = {state["legal_actions"]}')
+
             return action
-            # return torch.tensor([[action]],
-            #                    dtype=torch.long,
-            #                    device=self.device)
 
     def step(self, state):
-        # print('in dqn step')
         sample = random.random()
         self.action_chosen_in_training += 1
 
         if sample > self.eps_threshold():
-            # print('dqn model')
             return self.choose_action(state)
         else:
-            # print('dqn random')
             return random.choice(state['legal_actions'])
-            '''
-            return torch.tensor([[random.choice(state['legal_actions'])]],
-                                device=self.device,
-                                dtype=torch.long))
-            '''
 
     def eval_step(self, state):
         self.policy_net.eval()
@@ -215,10 +201,6 @@ class DQNAgent(object):
         loss.backward()
 
         self.weight_updates += 1
-        '''
-        for param in self.policy_net.parameters():
-            param.grad.data.clamp_(-1, 1)
-        '''
 
         self.optimizer.step()
 

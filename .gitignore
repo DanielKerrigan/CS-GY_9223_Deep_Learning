@@ -4,5 +4,5 @@ rlcard
 experiments
 models
 .DS_Store
-new_run.sh
-cfr_model/
+clear_dqn.sh
+clear_cfr.sh
