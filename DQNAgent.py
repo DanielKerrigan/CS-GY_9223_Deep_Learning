@@ -1,12 +1,12 @@
-from collections import namedtuple
-
 import math
 import random
+
+from fully_connected import FullyConnected
+from memory import Transition, CircularBuffer
 
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torch.nn.functional as F
 
 
 '''
@@ -17,7 +17,19 @@ https://pytorch.org/tutorials/intermediate/reinforcement_q_learning.html
 
 class DQNAgent(object):
 
-    def __init__(self, num_actions, state_shape, memory=10000, lr=0.1):
+    def __init__(
+            self,
+            num_actions,
+            state_shape,
+            memory=10000,
+            lr=0.1,
+            batch_size=128,
+            update_every=128,
+            eps_start=0.12,
+            target_update=300,
+            hidden_neurons=[64],
+            ):
+
         self.use_raw = False
         self.device = torch.device(
                 "cuda"
@@ -27,27 +39,33 @@ class DQNAgent(object):
 
         self.num_actions = num_actions
 
-        self.policy_net = DQN(state_shape, num_actions).to(self.device)
+        self.policy_net = FullyConnected(state_shape,
+                                         num_actions,
+                                         hidden_neurons).to(self.device)
 
-        self.target_net = DQN(state_shape, num_actions).to(self.device)
+        self.target_net = FullyConnected(state_shape,
+                                         num_actions,
+                                         hidden_neurons).to(self.device)
 
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()
 
         self.criterion = nn.MSELoss()
         self.optimizer = optim.SGD(self.policy_net.parameters(), lr=lr)
-        self.memory = ReplayMemory(memory)
+        self.memory = CircularBuffer(memory)
 
         self.train_step = 0
         self.action_chosen_in_training = 0
         self.weight_updates = 0
 
-        self.batch_size = 128
+        self.batch_size = batch_size
+        self.update_every = update_every
+        self.target_update = target_update
+
+        self.eps_start = eps_start
         self.gamma = 0.999
-        self.eps_start = 0.9
-        self.eps_end = 0.05
+        self.eps_end = 0.0
         self.eps_decay = 200
-        self.target_update = 10
 
     def choose_action(self, state):
         # pick action with largest expected reward
@@ -87,9 +105,13 @@ class DQNAgent(object):
         self.policy_net.train()
         return result
 
-    def eps_threshold(self):
+    def eps_threshold_1(self):
         return (self.eps_end + (self.eps_start - self.eps_end)
                 * math.exp(-1.0 * self.train_step / self.eps_decay))
+
+    def eps_threshold(self):
+        return (self.eps_end + ((self.eps_start - self.eps_end) /
+                                math.sqrt(self.train_step + 1)))
 
     def get_state_dict(self):
         return self.policy_net.state_dict()
@@ -105,7 +127,8 @@ class DQNAgent(object):
         return act + ([act[0]] * (self.num_actions - len(act)))
 
     def optimize_model(self):
-        if len(self.memory) < self.batch_size:
+        if (len(self.memory) < self.batch_size
+                or self.train_step % self.update_every != 0):
             return
 
         transitions = self.memory.sample(self.batch_size)
@@ -211,60 +234,3 @@ class DQNAgent(object):
         state_dict = torch.load(path)
         self.target_net.load_state_dict(state_dict)
         self.policy_net.load_state_dict(state_dict)
-
-
-'''
-Example state:
-    {
-        'legal_actions': [1, 2, 3],
-        'obs': array([1., 0., 0., 0., 1., 0., 0., 1., 0.]),
-        'action_record': [[0, 'raise'], [1, 'fold']]
-    }
-
-    obs:
-        0-2 = hand
-        3-5 = hero chips
-        6-8 = villain chips
-
-Example action: 1
-
-Example reward: 1.0
-'''
-
-Transition = namedtuple('Transition',
-                        ('state', 'action', 'reward', 'next_state', 'done'))
-
-
-class ReplayMemory(object):
-
-    def __init__(self, capactiy):
-        self.capactiy = capactiy
-        self.memory = []
-        self.position = 0
-
-    def push(self, *args):
-        if len(self.memory) < self.capactiy:
-            self.memory.append(None)
-
-        self.memory[self.position] = Transition(*args)
-        self.position = (self.position + 1) % self.capactiy
-
-    def sample(self, batch_size):
-        return random.sample(self.memory, batch_size)
-
-    def __len__(self):
-        return len(self.memory)
-
-
-class DQN(nn.Module):
-
-    def __init__(self, inputs, outputs):
-        super(DQN, self).__init__()
-
-        self.fc1 = nn.Linear(inputs, 64)
-        self.output = nn.Linear(64, outputs)
-
-    def forward(self, x):
-        x = F.relu(self.fc1(x))
-        x = self.output(x)
-        return x
