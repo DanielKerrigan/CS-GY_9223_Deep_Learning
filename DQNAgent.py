@@ -1,5 +1,6 @@
 import math
 import random
+import os
 
 from fully_connected import FullyConnected
 from memory import Transition, CircularBuffer
@@ -234,3 +235,10 @@ class DQNAgent(object):
         state_dict = torch.load(path, map_location=self.device)
         self.target_net.load_state_dict(state_dict)
         self.policy_net.load_state_dict(state_dict)
+
+    def save(self, dirname):
+        torch.save({
+            'train_step': self.train_step,
+            'model_state_dict': self.policy_net.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+        }, os.path.join(dirname, f'step-{self.train_step}.pt'),)
