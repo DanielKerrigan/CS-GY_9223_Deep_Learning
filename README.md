@@ -24,6 +24,7 @@
 - `leduc_holdem_eval.ipynb`: Evaluate the agents against each other
 
 ### Limit hold'em
+- `limit_holdem_eval.ipynb`: Evaluate the agents against each other
 - `limit_holdem_dqn_train.ipynb`: Train the DQN agent
 - `limit_holdem_human_dqn.py`: Play against the DQN agent
 
