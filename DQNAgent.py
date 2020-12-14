@@ -61,6 +61,7 @@ class DQNAgent(object):
         self.train_step = 0
         self.action_chosen_in_training = 0
         self.weight_updates = 0
+        self.loss = None
 
         self.batch_size = batch_size
         self.update_every = update_every
@@ -229,11 +230,11 @@ class DQNAgent(object):
         # the predicted total reward for choosing action a at state s_t
         # should equal the actual reward for that action plus the
         # predicted total reward for choosing another action at state s_{t+1}
-        loss = self.criterion(state_action_values,
-                              expected_state_action_values.unsqueeze(1))
+        self.loss = self.criterion(state_action_values,
+                                   expected_state_action_values.unsqueeze(1))
 
         self.optimizer.zero_grad()
-        loss.backward()
+        self.loss.backward()
 
         self.weight_updates += 1
 
