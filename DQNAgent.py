@@ -27,8 +27,11 @@ class DQNAgent(object):
             batch_size=128,
             update_every=128,
             eps_start=0.12,
+            eps_end=0.0,
             target_update=300,
             hidden_neurons=[64],
+            clip_grads=False,
+            smooth_loss=False
             ):
 
         self.use_raw = False
@@ -51,7 +54,7 @@ class DQNAgent(object):
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()
 
-        self.criterion = nn.MSELoss()
+        self.criterion = nn.SmoothL1Loss() if smooth_loss else nn.MSELoss()
         self.optimizer = optim.SGD(self.policy_net.parameters(), lr=lr)
         self.memory = CircularBuffer(memory)
 
@@ -63,10 +66,18 @@ class DQNAgent(object):
         self.update_every = update_every
         self.target_update = target_update
 
+        self.clip_grads = clip_grads
+
         self.eps_start = eps_start
-        self.gamma = 0.999
-        self.eps_end = 0.0
+        self.eps_end = eps_end
         self.eps_decay = 200
+        self.gamma = 0.999
+
+        self.action_pad = {
+                (act, num): [act] * num
+                for act in range(num_actions)
+                for num in range(num_actions)
+        }
 
     def choose_action(self, state):
         # pick action with largest expected reward
@@ -125,7 +136,7 @@ class DQNAgent(object):
         self.optimize_model()
 
     def pad_actions(self, act):
-        return act + ([act[0]] * (self.num_actions - len(act)))
+        return act + self.action_pad[(act[0], self.num_actions - len(act))]
 
     def optimize_model(self):
         if (len(self.memory) < self.batch_size
@@ -226,15 +237,20 @@ class DQNAgent(object):
 
         self.weight_updates += 1
 
+        if self.clip_grads:
+            for param in self.policy_net.parameters():
+                param.grad.data.clamp_(-1, 1)
+
         self.optimizer.step()
 
         if self.weight_updates % self.target_update == 0:
             self.target_net.load_state_dict(self.policy_net.state_dict())
 
     def load(self, path):
-        state_dict = torch.load(path, map_location=self.device)
-        self.target_net.load_state_dict(state_dict)
-        self.policy_net.load_state_dict(state_dict)
+        checkpoint = torch.load(path, map_location=self.device)
+        self.target_net.load_state_dict(checkpoint['model_state_dict'])
+        self.policy_net.load_state_dict(checkpoint['model_state_dict'])
+        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
     def save(self, dirname):
         torch.save({
