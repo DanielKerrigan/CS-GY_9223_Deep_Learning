@@ -30,3 +30,5 @@
 
 ### Other
 - `vis.ipynb`: Visualizations for the report
+- `images/`: Folder containing images of visualizations for the report
+- `spec-file.txt`: List of Conda dependencies for this project's environment
