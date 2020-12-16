@@ -1,6 +1,6 @@
 # CS-GY 9223: Deep Learning Project
 
-[RLCard fork](https://github.com/DanielKerrigan/rlcard/tree/dan)
+This project uses a modified version of RLCard for the RL environments. You can find [the RLCard fork here](https://github.com/DanielKerrigan/rlcard/tree/dan)
 
 ## Contents
 
@@ -32,3 +32,7 @@
 - `vis.ipynb`: Visualizations for the report
 - `images/`: Folder containing images of visualizations for the report
 - `spec-file.txt`: List of Conda dependencies for this project's environment
+
+## Results
+
+The above notebooks and scripts reference files in the `models` and `experiments` folders. You can find these folders on [Google Drive](https://drive.google.com/drive/folders/1Q1NhFZDi6oDIR_MzvlgGEKXAaR_FmzeZ?usp=sharing).
