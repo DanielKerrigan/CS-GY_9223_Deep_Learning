@@ -17,6 +17,12 @@ Example state:
 Example action: 1
 
 Example reward: 1.0
+
+
+This code is from the PyTorch RL Tutorial
+
+https://pytorch.org/tutorials/intermediate/reinforcement_q_learning.html
+
 '''
 
 Transition = namedtuple('Transition',

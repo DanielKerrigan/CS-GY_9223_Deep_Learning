@@ -74,6 +74,11 @@ class DQNAgent(object):
         self.eps_decay = 200
         self.gamma = 0.999
 
+        # this is used to make the legal actions
+        # lists all be length 4 to make selecting
+        # the max value easier. if the length is
+        # less then four, then add the first legal
+        # action again to pad the length to four
         self.action_pad = {
                 (act, num): [act] * num
                 for act in range(num_actions)
